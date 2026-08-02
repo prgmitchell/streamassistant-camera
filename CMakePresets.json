@@ -1,0 +1,130 @@
+{
+  "version": 8,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "macos",
+      "displayName": "macOS Universal",
+      "description": "Build StreamAssistant Camera for Apple Silicon and Intel Macs",
+      "binaryDir": "${sourceDir}/build_macos",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "generator": "Xcode",
+      "warnings": {
+        "dev": true,
+        "deprecated": true
+      },
+      "cacheVariables": {
+        "BUILD_TESTING": true,
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "12.0",
+        "CMAKE_OSX_ARCHITECTURES": "arm64;x86_64",
+        "CODESIGN_IDENTITY": "-"
+      }
+    },
+    {
+      "name": "macos-ci",
+      "inherits": ["macos"],
+      "displayName": "macOS Universal CI",
+      "description": "Build StreamAssistant Camera for macOS on CI",
+      "cacheVariables": {
+        "CMAKE_COMPILE_WARNING_AS_ERROR": true
+      }
+    },
+    {
+      "name": "windows-x64",
+      "displayName": "Windows x64",
+      "description": "Build StreamAssistant Camera for Windows x64",
+      "binaryDir": "${sourceDir}/build_x64",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64,version=10.0.26100",
+      "warnings": {
+        "dev": true,
+        "deprecated": true
+      },
+      "cacheVariables": {
+        "BUILD_TESTING": true
+      }
+    },
+    {
+      "name": "windows-ci-x64",
+      "inherits": ["windows-x64"],
+      "displayName": "Windows x64 CI",
+      "description": "Build StreamAssistant Camera on CI",
+      "cacheVariables": {
+        "CMAKE_COMPILE_WARNING_AS_ERROR": true
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "macos",
+      "configurePreset": "macos",
+      "displayName": "macOS Universal",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "macos-ci",
+      "configurePreset": "macos-ci",
+      "displayName": "macOS Universal CI",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
+      "displayName": "Windows x64",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "windows-ci-x64",
+      "configurePreset": "windows-ci-x64",
+      "displayName": "Windows x64 CI",
+      "configuration": "RelWithDebInfo"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "macos",
+      "configurePreset": "macos",
+      "configuration": "RelWithDebInfo",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "macos-ci",
+      "configurePreset": "macos-ci",
+      "configuration": "RelWithDebInfo",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
+      "configuration": "RelWithDebInfo",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-ci-x64",
+      "configurePreset": "windows-ci-x64",
+      "configuration": "RelWithDebInfo",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}
