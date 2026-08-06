@@ -26,5 +26,6 @@ struct camera_config {
 
 bool camera_config_generate(struct camera_config *config);
 bool camera_config_is_valid(const struct camera_config *config);
-bool camera_build_pairing_url(const struct camera_config *config, char *url, size_t capacity);
+bool camera_build_pairing_url(const struct camera_config *config, const char *plugin_version, char *url,
+			      size_t capacity);
 bool camera_build_receiver_url(const struct camera_config *config, char *url, size_t capacity);

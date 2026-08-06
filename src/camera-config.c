@@ -76,6 +76,37 @@ static bool valid_token(const char *value, size_t minimum, size_t maximum)
 	return true;
 }
 
+static bool valid_plugin_version(const char *value)
+{
+	size_t length;
+	size_t component_length = 0;
+	unsigned int separator_count = 0;
+
+	if (!value)
+		return false;
+
+	length = strlen(value);
+	if (length < 5 || length > 31)
+		return false;
+
+	for (size_t index = 0; index < length; index++) {
+		const char character = value[index];
+
+		if (character >= '0' && character <= '9') {
+			component_length++;
+			continue;
+		}
+
+		if (character != '.' || component_length == 0 || separator_count >= 2)
+			return false;
+
+		component_length = 0;
+		separator_count++;
+	}
+
+	return separator_count == 2 && component_length > 0;
+}
+
 bool camera_config_generate(struct camera_config *config)
 {
 	if (!config)
@@ -97,16 +128,27 @@ bool camera_config_is_valid(const struct camera_config *config)
 	       valid_token(config->publisher_secret, 24, 80) && valid_token(config->viewer_secret, 24, 80);
 }
 
-bool camera_build_pairing_url(const struct camera_config *config, char *url, size_t capacity)
+bool camera_build_pairing_url(const struct camera_config *config, const char *plugin_version, char *url,
+			      size_t capacity)
 {
 	int written;
 
-	if (!camera_config_is_valid(config) || !url || capacity == 0)
+	if (!url || capacity == 0)
 		return false;
 
-	written = snprintf(url, capacity, CAMERA_ORIGIN "/pair#v=1&session=%s&source=%s&publisher=%s",
-			   config->session_id, config->source_id, config->publisher_secret);
-	return written > 0 && (size_t)written < capacity;
+	url[0] = '\0';
+	if (!camera_config_is_valid(config) || !valid_plugin_version(plugin_version))
+		return false;
+
+	written = snprintf(url, capacity,
+			   CAMERA_ORIGIN "/pair#v=1&plugin=%s&session=%s&source=%s&publisher=%s",
+			   plugin_version, config->session_id, config->source_id, config->publisher_secret);
+	if (written <= 0 || (size_t)written >= capacity) {
+		url[0] = '\0';
+		return false;
+	}
+
+	return true;
 }
 
 bool camera_build_receiver_url(const struct camera_config *config, char *url, size_t capacity)

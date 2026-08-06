@@ -199,7 +199,7 @@ static bool open_pairing_page(struct streamassistant_camera *camera)
 {
 	char pairing_url[CAMERA_URL_CAPACITY];
 
-	if (!camera_build_pairing_url(&camera->config, pairing_url, sizeof(pairing_url)))
+	if (!camera_build_pairing_url(&camera->config, PLUGIN_VERSION, pairing_url, sizeof(pairing_url)))
 		return false;
 
 	if (!camera_platform_open_url(pairing_url)) {
