@@ -2,7 +2,7 @@
   #error SourceDir must identify the installed plugin staging directory.
 #endif
 #ifndef PackageVersion
-  #define PackageVersion "1.0.0"
+  #define PackageVersion "1.0.1"
 #endif
 #ifndef OutputDir
   #define OutputDir "..\release"
@@ -27,7 +27,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=StreamAssistant Camera
-VersionInfoVersion=1.0.0.0
+VersionInfoVersion=1.0.1.0
 VersionInfoCompany=StreamAssistant
 VersionInfoDescription=StreamAssistant Camera
 VersionInfoProductName=StreamAssistant Camera

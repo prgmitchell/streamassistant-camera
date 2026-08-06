@@ -11,8 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define RECONNECT_DELAY_SECONDS 2
-
 static void *metadata_queue_key = &metadata_queue_key;
 
 @interface StreamAssistantMetadataConnection : NSObject {
@@ -23,7 +21,9 @@ static void *metadata_queue_key = &metadata_queue_key;
     NSURLSession *_session;
     NSURLSessionWebSocketTask *_task;
     dispatch_block_t _reconnect;
+    uint32_t _reconnectAttempts;
     BOOL _stopped;
+    BOOL _terminalFailure;
 }
 
 - (instancetype)initWithConfig:(const struct camera_config *)config
@@ -66,10 +66,13 @@ static void *metadata_queue_key = &metadata_queue_key;
 
 - (void)scheduleReconnect
 {
-    if (_stopped || _reconnect)
+    if (_stopped || _terminalFailure || _reconnect)
         return;
 
     [self closeTransport];
+    uint32_t delay_ms = signaling_metadata_reconnect_delay_ms(_reconnectAttempts);
+    if (_reconnectAttempts < UINT32_MAX)
+        _reconnectAttempts++;
     __weak StreamAssistantMetadataConnection *weak_self = self;
     _reconnect = dispatch_block_create(0, ^{
         StreamAssistantMetadataConnection *strong_self = weak_self;
@@ -78,7 +81,7 @@ static void *metadata_queue_key = &metadata_queue_key;
         strong_self->_reconnect = nil;
         [strong_self connect];
     });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, RECONNECT_DELAY_SECONDS * NSEC_PER_SEC), _queue, _reconnect);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t) delay_ms * NSEC_PER_MSEC), _queue, _reconnect);
 }
 
 - (void)receiveNext
@@ -103,8 +106,15 @@ static void *metadata_queue_key = &metadata_queue_key;
             uint32_t width = 0;
             uint32_t height = 0;
             const char *text = message.string.UTF8String;
-            if (text && signaling_metadata_parse_dimensions(text, strong_self->_config.source_id, &width, &height))
+            if (text && signaling_metadata_is_terminal_error(text)) {
+                strong_self->_terminalFailure = YES;
+                [strong_self closeTransport];
+                return;
+            }
+            if (text && signaling_metadata_parse_dimensions(text, strong_self->_config.source_id, &width, &height)) {
+                strong_self->_reconnectAttempts = 0;
                 strong_self->_callback(width, height, strong_self->_context);
+            }
             [strong_self receiveNext];
         });
     }];

@@ -54,6 +54,20 @@ int main(void)
 		      "{\"type\":\"media-offer\",\"sourceId\":\"source_123\",\"width\":1280,\"height\":720}",
 		      source_id, &width, &height),
 	      "reject another signaling message");
+	check(signaling_metadata_is_terminal_error(
+		      "{\"type\":\"media-source-error\",\"code\":\"authentication-failed\",\"retryable\":false}"),
+	      "recognize terminal authentication errors");
+	check(!signaling_metadata_is_terminal_error(
+		       "{\"type\":\"media-source-error\",\"code\":\"source-not-ready\",\"retryable\":true}"),
+	      "keep waiting when a source is not ready");
+	check(!signaling_metadata_is_terminal_error(
+		       "{\"type\":\"media-dimensions\",\"sourceId\":\"source_123\",\"width\":1280,\"height\":720}"),
+	      "ignore non-error messages");
+	check(signaling_metadata_reconnect_delay_ms(0) == 2000, "start reconnect delay at two seconds");
+	check(signaling_metadata_reconnect_delay_ms(1) == 4000, "double reconnect delay");
+	check(signaling_metadata_reconnect_delay_ms(7) == 256000, "continue exponential reconnect backoff");
+	check(signaling_metadata_reconnect_delay_ms(8) == 300000, "cap reconnect delay at five minutes");
+	check(signaling_metadata_reconnect_delay_ms(UINT32_MAX) == 300000, "cap very large reconnect attempts");
 
 	if (failures == 0)
 		printf("All StreamAssistant Camera signaling metadata tests passed.\n");

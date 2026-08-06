@@ -18,7 +18,8 @@
 #define SIGNALING_HOST L"streamassistant.app"
 #define SIGNALING_ORIGIN L"Origin: https://camera.streamassistant.app\r\n"
 #define MESSAGE_CAPACITY 4096
-#define RECONNECT_DELAY_MS 2000
+#define RECONNECT_BASE_DELAY_MS 2000U
+#define RECONNECT_MAX_DELAY_MS 300000U
 
 #if defined(_WIN32) && !defined(STREAMASSISTANT_METADATA_PARSE_ONLY)
 
@@ -104,6 +105,32 @@ static bool string_field_equals(const char *message, const char *field, const ch
 	return (size_t)(end - position) == expected_length && memcmp(position, expected, expected_length) == 0;
 }
 
+static bool boolean_field_equals(const char *message, const char *field, bool expected)
+{
+	char pattern[64];
+	const char *position;
+	const char *literal = expected ? "true" : "false";
+
+	if (snprintf(pattern, sizeof(pattern), "\"%s\"", field) <= 0)
+		return false;
+
+	position = strstr(message, pattern);
+	if (!position)
+		return false;
+	position += strlen(pattern);
+	while (*position == ' ' || *position == '\t')
+		position++;
+	if (*position++ != ':')
+		return false;
+	while (*position == ' ' || *position == '\t')
+		position++;
+
+	const size_t literal_length = strlen(literal);
+	const char next = position[literal_length];
+	return strncmp(position, literal, literal_length) == 0 &&
+	       (next == ',' || next == '}' || next == ' ' || next == '\t' || next == '\r' || next == '\n');
+}
+
 bool signaling_metadata_parse_dimensions(const char *message, const char *source_id, uint32_t *width, uint32_t *height)
 {
 	uint32_t parsed_width;
@@ -121,7 +148,29 @@ bool signaling_metadata_parse_dimensions(const char *message, const char *source
 	return true;
 }
 
+bool signaling_metadata_is_terminal_error(const char *message)
+{
+	return message && string_field_equals(message, "type", "media-source-error") &&
+	       (string_field_equals(message, "code", "authentication-failed") ||
+		boolean_field_equals(message, "retryable", false));
+}
+
+uint32_t signaling_metadata_reconnect_delay_ms(uint32_t attempt)
+{
+	if (attempt >= 8U)
+		return RECONNECT_MAX_DELAY_MS;
+
+	const uint32_t delay = RECONNECT_BASE_DELAY_MS << attempt;
+	return delay < RECONNECT_MAX_DELAY_MS ? delay : RECONNECT_MAX_DELAY_MS;
+}
+
 #if defined(_WIN32) && !defined(STREAMASSISTANT_METADATA_PARSE_ONLY)
+
+enum metadata_connection_result {
+	METADATA_CONNECTION_RETRY,
+	METADATA_CONNECTION_RETRY_AFTER_STABLE,
+	METADATA_CONNECTION_STOP,
+};
 
 static bool utf8_to_wide(const char *input, wchar_t *output, size_t capacity)
 {
@@ -148,10 +197,11 @@ static bool release_websocket_ownership(struct signaling_metadata_client *client
 	return owned;
 }
 
-static bool receive_messages(struct signaling_metadata_client *client, HINTERNET websocket)
+static enum metadata_connection_result receive_messages(struct signaling_metadata_client *client, HINTERNET websocket)
 {
 	char message[MESSAGE_CAPACITY + 1];
 	size_t total = 0;
+	bool received_dimensions = false;
 
 	while (!stopped(client)) {
 		DWORD received = 0;
@@ -160,29 +210,33 @@ static bool receive_messages(struct signaling_metadata_client *client, HINTERNET
 							     (DWORD)(MESSAGE_CAPACITY - total), &received, &type);
 
 		if (result != ERROR_SUCCESS || type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
-			return false;
+			return received_dimensions ? METADATA_CONNECTION_RETRY_AFTER_STABLE : METADATA_CONNECTION_RETRY;
 		if (type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE &&
 		    type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)
 			continue;
 
 		total += received;
 		if (total >= MESSAGE_CAPACITY)
-			return false;
+			return received_dimensions ? METADATA_CONNECTION_RETRY_AFTER_STABLE : METADATA_CONNECTION_RETRY;
 		if (type == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE)
 			continue;
 
 		message[total] = '\0';
+		if (signaling_metadata_is_terminal_error(message))
+			return METADATA_CONNECTION_STOP;
 		uint32_t width;
 		uint32_t height;
-		if (signaling_metadata_parse_dimensions(message, client->config.source_id, &width, &height))
+		if (signaling_metadata_parse_dimensions(message, client->config.source_id, &width, &height)) {
+			received_dimensions = true;
 			client->callback(width, height, client->context);
+		}
 		total = 0;
 	}
 
-	return true;
+	return METADATA_CONNECTION_STOP;
 }
 
-static bool run_connection(struct signaling_metadata_client *client)
+static enum metadata_connection_result run_connection(struct signaling_metadata_client *client)
 {
 	HINTERNET session = NULL;
 	HINTERNET connection = NULL;
@@ -193,7 +247,7 @@ static bool run_connection(struct signaling_metadata_client *client)
 	char join_message[512];
 	DWORD status = 0;
 	DWORD status_size = sizeof(status);
-	bool success = false;
+	enum metadata_connection_result result = METADATA_CONNECTION_RETRY;
 
 	if (snprintf(path, sizeof(path), "/signaling?session=%s", client->config.session_id) <= 0 ||
 	    !utf8_to_wide(path, wide_path, _countof(wide_path)))
@@ -236,7 +290,7 @@ static bool run_connection(struct signaling_metadata_client *client)
 				 (DWORD)written) != ERROR_SUCCESS)
 		goto cleanup;
 
-	success = receive_messages(client, websocket);
+	result = receive_messages(client, websocket);
 
 cleanup:
 	if (websocket) {
@@ -249,16 +303,25 @@ cleanup:
 		WinHttpCloseHandle(connection);
 	if (session)
 		WinHttpCloseHandle(session);
-	return success;
+	return result;
 }
 
 static DWORD WINAPI metadata_thread(void *context)
 {
 	struct signaling_metadata_client *client = context;
+	uint32_t reconnect_attempt = 0;
 
 	while (!stopped(client)) {
-		run_connection(client);
-		if (WaitForSingleObject(client->stop_event, RECONNECT_DELAY_MS) == WAIT_OBJECT_0)
+		const enum metadata_connection_result result = run_connection(client);
+		if (result == METADATA_CONNECTION_STOP || stopped(client))
+			break;
+		if (result == METADATA_CONNECTION_RETRY_AFTER_STABLE)
+			reconnect_attempt = 0;
+
+		const DWORD delay = signaling_metadata_reconnect_delay_ms(reconnect_attempt);
+		if (reconnect_attempt < UINT32_MAX)
+			reconnect_attempt++;
+		if (WaitForSingleObject(client->stop_event, delay) == WAIT_OBJECT_0)
 			break;
 	}
 
