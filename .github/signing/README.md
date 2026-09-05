@@ -31,6 +31,11 @@ authenticated and `AZURE_CLIENT_ID` set to the existing signing application's cl
 az ad app federated-credential create --id $env:AZURE_CLIENT_ID --parameters .github/signing/github-oidc-credential.json
 ```
 
+Camera uses GitHub's OIDC subject format containing immutable owner and repository IDs:
+`repo:prgmitchell@86465454/streamassistant-camera@1314502863:environment:windows-release`.
+This must match the subject reported by the Azure login step exactly. MIDIMaster's older name-only subject does
+not apply to this repository; do not copy it or remove the numeric IDs.
+
 The application already has permission to sign with this profile. No new client secret, exported certificate,
 or private signing key is needed. Only the signing job requests `id-token: write`; the build jobs do not use Azure.
 See the [Artifact Signing action documentation](https://github.com/Azure/artifact-signing-action) for service details.
