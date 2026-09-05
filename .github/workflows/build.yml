@@ -31,7 +31,7 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq "tag") {
             $version = $env:GITHUB_REF_NAME.TrimStart("v")
           } else {
-            $version = "1.1.0-dev.$env:GITHUB_RUN_NUMBER"
+            $version = "1.2.0-dev.$env:GITHUB_RUN_NUMBER"
           }
           "value=$version" >> $env:GITHUB_OUTPUT
 
@@ -166,7 +166,7 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="${GITHUB_REF_NAME#v}"
           else
-            version="1.1.0-dev.$GITHUB_RUN_NUMBER"
+            version="1.2.0-dev.$GITHUB_RUN_NUMBER"
           fi
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
@@ -209,11 +209,78 @@ jobs:
             release/streamassistant-camera-v${{ steps.version.outputs.value }}-macos-universal.pkg
             release/streamassistant-camera-v${{ steps.version.outputs.value }}-macos-universal.zip
 
+  linux-x86_64:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Select package version
+        id: version
+        shell: bash
+        run: |
+          version="$(jq -r .version buildspec.json)"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            [[ "$GITHUB_REF_NAME" == "v$version" ]]
+          else
+            version="$version-dev.$GITHUB_RUN_NUMBER"
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install OBS template dependencies
+        run: |
+          sudo add-apt-repository --yes ppa:obsproject/obs-studio
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential cmake ninja-build pkg-config libgles2-mesa-dev libsimde-dev \
+            obs-studio qt6-base-dev qt6-websockets-dev dpkg-dev
+
+      - name: Configure
+        run: cmake --preset ubuntu-ci-x86_64
+
+      - name: Build
+        run: cmake --build --preset ubuntu-ci-x86_64 --parallel
+
+      - name: Test
+        run: ctest --preset ubuntu-ci-x86_64
+
+      - name: Package
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: bash .github/scripts/Package-Linux.sh "$PACKAGE_VERSION"
+
+      - name: Verify package
+        env:
+          PACKAGE_VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          package="release/streamassistant-camera-v${PACKAGE_VERSION}-linux-x86_64.deb"
+          test "$(dpkg-deb -f "$package" Package)" = streamassistant-camera
+          test "$(dpkg-deb -f "$package" Version)" = "$PACKAGE_VERSION"
+          test "$(dpkg-deb -f "$package" Architecture)" = amd64
+          dpkg-deb --extract "$package" "$RUNNER_TEMP/camera-linux-package"
+          binary="$RUNNER_TEMP/camera-linux-package/usr/lib/x86_64-linux-gnu/obs-plugins/streamassistant-camera.so"
+          test -f "$binary"
+          test -f "$RUNNER_TEMP/camera-linux-package/usr/share/obs/obs-plugins/streamassistant-camera/locale/en-US.ini"
+          ldd -r "$binary" > "$RUNNER_TEMP/camera-linux-linkage.txt" 2>&1
+          cat "$RUNNER_TEMP/camera-linux-linkage.txt"
+          ! grep -E 'not found|undefined symbol' "$RUNNER_TEMP/camera-linux-linkage.txt"
+          tar -tJf "release/streamassistant-camera-v${PACKAGE_VERSION}-linux-x86_64.tar.xz"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-x86_64
+          if-no-files-found: error
+          path: |
+            release/streamassistant-camera-v${{ steps.version.outputs.value }}-linux-x86_64.deb
+            release/streamassistant-camera-v${{ steps.version.outputs.value }}-linux-x86_64.tar.xz
+
   release:
     if: github.ref_type == 'tag'
     needs:
       - windows-sign
       - macos-universal
+      - linux-x86_64
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -229,6 +296,12 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: macos-universal
+          path: release-assets
+
+      - name: Download Linux packages
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64
           path: release-assets
 
       - name: Generate checksums
