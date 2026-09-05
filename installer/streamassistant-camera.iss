@@ -37,7 +37,7 @@ Source: "{#SourceDir}\bin\64bit\streamassistant-camera.dll"; DestDir: "{app}\bin
 Source: "{#SourceDir}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Messages]
-WelcomeLabel2=This installs StreamAssistant Camera for the current Windows streaming setup.%n%nThe package is unsigned, so Windows SmartScreen may show a warning.
+WelcomeLabel2=This installs StreamAssistant Camera for the current Windows streaming setup.
 
 [Run]
 Filename: "https://camera.streamassistant.app"; Description: "Open the StreamAssistant Camera website"; Flags: postinstall shellexec skipifsilent unchecked

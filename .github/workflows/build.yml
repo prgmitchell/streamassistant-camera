@@ -17,6 +17,8 @@ permissions:
 jobs:
   windows-x64:
     runs-on: windows-2025-vs2026
+    outputs:
+      package-version: ${{ steps.version.outputs.value }}
 
     steps:
       - name: Checkout
@@ -56,10 +58,99 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: windows-x64
+          name: windows-x64-unsigned
+          if-no-files-found: error
           path: |
             release/streamassistant-camera-v${{ steps.version.outputs.value }}-windows-x64.exe
             release/streamassistant-camera-v${{ steps.version.outputs.value }}-windows-x64.zip
+
+  windows-sign:
+    if: >-
+      github.repository == 'prgmitchell/streamassistant-camera' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: windows-x64
+    runs-on: windows-2025
+    environment: windows-release
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: windows-release-signing
+      cancel-in-progress: false
+    env:
+      WINDOWS_SIGNING_PUBLISHER: MITCHELL SOFTWARE SOLUTIONS LLC
+      INSTALLER_PATH: release/streamassistant-camera-v${{ needs.windows-x64.outputs.package-version }}-windows-x64.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Validate Azure signing configuration
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_ARTIFACT_SIGNING_PROFILE: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+        run: |
+          $required = @(
+            'AZURE_CLIENT_ID'
+            'AZURE_TENANT_ID'
+            'AZURE_SUBSCRIPTION_ID'
+            'AZURE_ARTIFACT_SIGNING_ENDPOINT'
+            'AZURE_ARTIFACT_SIGNING_ACCOUNT'
+            'AZURE_ARTIFACT_SIGNING_PROFILE'
+          )
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing windows-release environment variable: $name"
+            }
+          }
+
+      - name: Download Windows packages
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-x64-unsigned
+          path: release
+
+      - name: Azure login
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows installer
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}/${{ env.INSTALLER_PATH }}
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: StreamAssistant Camera
+          description-url: https://camera.streamassistant.app
+
+      - name: Verify signed installer
+        shell: pwsh
+        run: |
+          ./.github/scripts/Assert-Authenticode.ps1 `
+            -Path $env:INSTALLER_PATH `
+            -ExpectedPublisher $env:WINDOWS_SIGNING_PUBLISHER `
+            -RequireTimestamp
+
+      - name: Upload signed Windows packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64
+          if-no-files-found: error
+          path: |
+            ${{ env.INSTALLER_PATH }}
+            release/streamassistant-camera-v${{ needs.windows-x64.outputs.package-version }}-windows-x64.zip
 
   macos-universal:
     runs-on: macos-26
@@ -121,18 +212,24 @@ jobs:
   release:
     if: github.ref_type == 'tag'
     needs:
-      - windows-x64
+      - windows-sign
       - macos-universal
     runs-on: ubuntu-24.04
     permissions:
       contents: write
 
     steps:
-      - name: Download artifacts
+      - name: Download signed Windows packages
         uses: actions/download-artifact@v8
         with:
+          name: windows-x64
           path: release-assets
-          merge-multiple: true
+
+      - name: Download macOS packages
+        uses: actions/download-artifact@v8
+        with:
+          name: macos-universal
+          path: release-assets
 
       - name: Generate checksums
         working-directory: release-assets
@@ -146,5 +243,6 @@ jobs:
           body: |
             Use an iPhone or Android phone as a camera source without installing a native phone app.
 
-            The Windows and macOS packages are unsigned, so the operating system may display a security warning.
+            The Windows installer is digitally signed by MITCHELL SOFTWARE SOLUTIONS LLC.
+            The macOS package is unsigned and not notarized, so macOS may display a security warning.
           files: release-assets/*

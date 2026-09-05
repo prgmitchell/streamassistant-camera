@@ -58,6 +58,8 @@ cmake --build --preset macos
 ctest --preset macos
 ```
 
+Windows release maintainers: see [installer signing configuration](.github/signing/README.md).
+
 ## License
 
 GPL-2.0-or-later. See [LICENSE](LICENSE).
