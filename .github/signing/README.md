@@ -49,7 +49,7 @@ and is never downloaded by the release job. Release checksums are generated afte
 To verify a downloaded installer in PowerShell:
 
 ```powershell
-./.github/scripts/Assert-Authenticode.ps1 -Path ./release/streamassistant-camera-v1.2.1-windows-x64.exe `
+./.github/scripts/Assert-Authenticode.ps1 -Path ./release/streamassistant-camera-v1.3.0-windows-x64.exe `
   -ExpectedPublisher 'MITCHELL SOFTWARE SOLUTIONS LLC' -RequireTimestamp
 ```
 

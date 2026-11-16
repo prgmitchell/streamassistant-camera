@@ -41,7 +41,7 @@ The `.pkg` installer is unsigned and not notarized. If macOS blocks it:
 Use native OBS from `ppa:obsproject/obs-studio`, then install the downloaded package:
 
 ```sh
-sudo apt install ./streamassistant-camera-v1.2.1-linux-x86_64.deb
+sudo apt install ./streamassistant-camera-v1.3.0-linux-x86_64.deb
 ```
 
 APT installs the required libraries. The `.tar.xz` alternative installs under `/usr` and requires dependencies
@@ -79,7 +79,7 @@ sudo apt install build-essential cmake ninja-build pkg-config libgles2-mesa-dev 
 cmake --preset ubuntu-x86_64
 cmake --build --preset ubuntu-x86_64 --parallel
 ctest --preset ubuntu-x86_64
-bash .github/scripts/Package-Linux.sh 1.2.1
+bash .github/scripts/Package-Linux.sh 1.3.0
 ```
 
 Build tooling is based on the [OBS plugin template](https://github.com/obsproject/obs-plugintemplate).
