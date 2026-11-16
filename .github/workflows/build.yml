@@ -31,7 +31,7 @@ jobs:
           if ($env:GITHUB_REF_TYPE -eq "tag") {
             $version = $env:GITHUB_REF_NAME.TrimStart("v")
           } else {
-            $version = "1.2.0-dev.$env:GITHUB_RUN_NUMBER"
+            $version = "1.2.1-dev.$env:GITHUB_RUN_NUMBER"
           }
           "value=$version" >> $env:GITHUB_OUTPUT
 
@@ -54,6 +54,24 @@ jobs:
             -Target x64 `
             -Configuration RelWithDebInfo `
             -PackageVersion "${{ steps.version.outputs.value }}"
+
+      - name: Verify OBS 33 Windows package layout
+        shell: pwsh
+        run: |
+          $archive = [System.IO.Compression.ZipFile]::OpenRead("$PWD/release/streamassistant-camera-v${{ steps.version.outputs.value }}-windows-x64.zip")
+          try {
+            $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
+            foreach ($required in @('streamassistant-camera/streamassistant-camera.dll', 'streamassistant-camera/data/locale/en-US.ini')) {
+              if ($required -cnotin $entries) { throw "Missing package entry: $required" }
+            }
+            foreach ($entry in $entries) {
+              if ($entry -notmatch '^streamassistant-camera/(streamassistant-camera\.dll$|data/)' -or $entry -match '\.pdb$') {
+                throw "Unexpected package entry: $entry"
+              }
+            }
+          } finally {
+            $archive.Dispose()
+          }
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -166,7 +184,7 @@ jobs:
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="${GITHUB_REF_NAME#v}"
           else
-            version="1.2.0-dev.$GITHUB_RUN_NUMBER"
+            version="1.2.1-dev.$GITHUB_RUN_NUMBER"
           fi
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
@@ -315,6 +333,10 @@ jobs:
           generate_release_notes: true
           body: |
             Use an iPhone or Android phone as a camera source without installing a native phone app.
+
+            Windows packages require OBS Studio 33 or later and use its updated plugin folder structure.
+            The installer removes the previous ProgramData bin/64bit copy during upgrades.
+            For portable OBS, extract the ZIP into the plugins folder in the portable OBS installation.
 
             The Windows installer is digitally signed by MITCHELL SOFTWARE SOLUTIONS LLC.
             The macOS package is unsigned and not notarized, so macOS may display a security warning.

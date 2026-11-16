@@ -2,7 +2,7 @@
   #error SourceDir must identify the installed plugin staging directory.
 #endif
 #ifndef PackageVersion
-  #define PackageVersion "1.2.0"
+  #define PackageVersion "1.2.1"
 #endif
 #ifndef OutputDir
   #define OutputDir "..\release"
@@ -27,17 +27,24 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=StreamAssistant Camera
-VersionInfoVersion=1.2.0.0
+VersionInfoVersion=1.2.1.0
 VersionInfoCompany=StreamAssistant
 VersionInfoDescription=StreamAssistant Camera
 VersionInfoProductName=StreamAssistant Camera
 
 [Files]
-Source: "{#SourceDir}\bin\64bit\streamassistant-camera.dll"; DestDir: "{app}\bin\64bit"; Flags: ignoreversion
+Source: "{#SourceDir}\streamassistant-camera.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\data\*"; DestDir: "{app}\data"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; Remove only this plugin's legacy files when upgrading to the OBS 33 layout.
+Type: files; Name: "{app}\bin\64bit\streamassistant-camera.dll"
+Type: files; Name: "{app}\bin\64bit\streamassistant-camera.pdb"
+Type: dirifempty; Name: "{app}\bin\64bit"
+Type: dirifempty; Name: "{app}\bin"
+
 [Messages]
-WelcomeLabel2=This installs StreamAssistant Camera for the current Windows streaming setup.
+WelcomeLabel2=This installs StreamAssistant Camera for OBS Studio 33 or later.
 
 [Run]
 Filename: "https://camera.streamassistant.app"; Description: "Open the StreamAssistant Camera website"; Flags: postinstall shellexec skipifsilent unchecked
